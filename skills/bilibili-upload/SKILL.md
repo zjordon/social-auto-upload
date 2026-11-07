@@ -20,8 +20,10 @@ summary: 登录哔哩哔哩并发布视频，支持分区选择。
 | 功能 | 命令入口 | 说明 |
 | --- | --- | --- |
 | 登录 | `sau bilibili login --account <name>` | 需要用户自己在本地真实终端里执行，用于生成或刷新登录信息 |
+| 登录（浏览器档案） | `sau bilibili login --account <name> --browser` | 打开持久化浏览器档案扫码，供浏览器路线使用 |
 | 校验 | `sau bilibili check --account <name>` | 检查指定账号当前是否有效 |
-| 视频上传 | `sau bilibili upload-video ...` | 上传一条 Bilibili 视频 |
+| 视频上传（API 路线） | `sau bilibili upload-video ... --tid <id>` | biliup CLI 直接投稿，无草稿/创作声明能力 |
+| 视频上传（浏览器路线） | `sau bilibili upload-video ... --category <分区名> [--draft]` | CDP 接管常驻浏览器或持久化档案，支持草稿/创作声明/封面 |
 
 ## 默认工作流
 
@@ -35,6 +37,10 @@ summary: 登录哔哩哔哩并发布视频，支持分区选择。
 - 用户没有登录信息，先让用户自己在本地终端执行 `login`
 - 用户只想确认账号状态，先用 `check`
 - 用户要发视频，用 `upload-video`
+- 用户要**存草稿不直接发布**、选**创作声明**、按**分区名**（如「科技数码」）投稿，
+  或想复用已登录的常驻浏览器（`--cdp-url`）→ 必须走浏览器路线（见 cli-contract.md）
+- 两条路线判定：带 `--draft` / `--cdp-url` / `--category` 任一即浏览器路线；
+  否则 biliup API 路线（此时 `--tid` 必填）
 
 ## 执行前检查
 
