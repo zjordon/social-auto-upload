@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import sau_cli
+from conf import LOCAL_CHROME_HEADLESS
 
 
 class BrowserCliParserTests(unittest.TestCase):
@@ -93,6 +94,32 @@ class BrowserCliParserTests(unittest.TestCase):
             ])
         self.assertIsNone(args.declaration)
 
+    def test_douyin_upload_video_accepts_draft(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            video_path = Path(tmp_dir) / "demo.mp4"
+            video_path.write_bytes(b"video")
+            parser = sau_cli.build_parser()
+            args = parser.parse_args([
+                "douyin", "upload-video", "--account", "creator",
+                "--file", str(video_path), "--title", "标题", "--draft",
+            ])
+            without_draft = parser.parse_args([
+                "douyin", "upload-video", "--account", "creator",
+                "--file", str(video_path), "--title", "标题",
+            ])
+        self.assertTrue(args.draft)
+        self.assertFalse(without_draft.draft)
+
+    def test_douyin_upload_note_accepts_draft(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            image_path = Path(tmp_dir) / "1.png"
+            image_path.write_bytes(b"image")
+            args = sau_cli.build_parser().parse_args([
+                "douyin", "upload-note", "--account", "creator",
+                "--images", str(image_path), "--title", "标题", "--draft",
+            ])
+        self.assertTrue(args.draft)
+
     def test_douyin_request_legacy_positional_runtime_flags_keep_their_meaning(self):
         request = sau_commands.douyin.DouyinVideoUploadRequest(
             "creator", Path("demo.mp4"), "标题", "简介", [], 0,
@@ -157,7 +184,7 @@ class BrowserCliParserTests(unittest.TestCase):
         self.assertEqual(args.title, "图文标题")
         self.assertEqual(args.note, "图文正文")
 
-    def test_xiaohongshu_upload_video_defaults_to_headless(self):
+    def test_xiaohongshu_upload_video_headless_follows_conf(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             video_path = Path(tmp_dir) / "demo.mp4"
             video_path.write_bytes(b"video")
@@ -176,7 +203,7 @@ class BrowserCliParserTests(unittest.TestCase):
                 ]
             )
 
-        self.assertTrue(args.headless)
+        self.assertEqual(args.headless, LOCAL_CHROME_HEADLESS)
 
     def test_xiaohongshu_upload_note_accepts_headed(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

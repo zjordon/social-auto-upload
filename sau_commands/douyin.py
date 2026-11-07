@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from uploader.douyin_uploader.main import (
+    DOUYIN_PUBLISH_STRATEGY_DRAFT,
     DOUYIN_PUBLISH_STRATEGY_IMMEDIATE,
     DOUYIN_PUBLISH_STRATEGY_SCHEDULED,
     DouYinNote,
@@ -41,7 +42,9 @@ def register(platform_parsers):
     upload_video_parser.add_argument("--title", required=True, help="Video title")
     upload_video_parser.add_argument("--desc", default="", help="Optional video description")
     upload_video_parser.add_argument("--tags", default="", help="Comma-separated tags, such as tag1,tag2")
-    upload_video_parser.add_argument("--schedule", type=schedule_value, help=f"Schedule time in {schedule_help}")
+    video_publish_group = upload_video_parser.add_mutually_exclusive_group()
+    video_publish_group.add_argument("--schedule", type=schedule_value, help=f"Schedule time in {schedule_help}")
+    video_publish_group.add_argument("--draft", action="store_true", help="Save as draft instead of publishing")
     upload_video_parser.add_argument("--thumbnail", type=existing_file_path, help="Optional 3:4 portrait thumbnail path")
     upload_video_parser.add_argument("--thumbnail-landscape", type=existing_file_path, help="Optional 4:3 landscape thumbnail path")
     upload_video_parser.add_argument("--thumbnail-portrait", type=existing_file_path, help="Optional 3:4 portrait thumbnail path")
@@ -62,7 +65,9 @@ def register(platform_parsers):
     upload_note_parser.add_argument("--notef", default="", help="Read note content from file (txt/md)")
     upload_note_parser.add_argument("--tags", default="", help="Comma-separated tags, such as tag1,tag2")
     upload_note_parser.add_argument("--bgm", default="", help="BGM music name to search and select")
-    upload_note_parser.add_argument("--schedule", type=schedule_value, help=f"Schedule time in {schedule_help}")
+    note_publish_group = upload_note_parser.add_mutually_exclusive_group()
+    note_publish_group.add_argument("--schedule", type=schedule_value, help=f"Schedule time in {schedule_help}")
+    note_publish_group.add_argument("--draft", action="store_true", help="Save as draft instead of publishing")
     add_runtime_flags(upload_note_parser)
 
 
@@ -114,12 +119,7 @@ async def check_douyin_account(account_name: str) -> bool:
 
 async def upload_video(request: DouyinVideoUploadRequest) -> Path:
     account_file = resolve_account_file("douyin", request.account_name)
-    is_ready = await douyin_setup(str(account_file), handle=False)
-    if not is_ready:
-        raise RuntimeError(
-            f"Douyin cookie is missing or expired: {account_file}. Run `sau douyin login --account {request.account_name}` first."
-        )
-
+    # 登录态校验由 upload 流程在持久化档案内完成，不再用临时浏览器预检（风控信号）
     app = DouYinVideo(
         request.title,
         str(request.video_file),
@@ -147,12 +147,7 @@ async def upload_video(request: DouyinVideoUploadRequest) -> Path:
 
 async def upload_note(request: DouyinNoteUploadRequest) -> Path:
     account_file = resolve_account_file("douyin", request.account_name)
-    is_ready = await douyin_setup(str(account_file), handle=False)
-    if not is_ready:
-        raise RuntimeError(
-            f"Douyin cookie is missing or expired: {account_file}. Run `sau douyin login --account {request.account_name}` first."
-        )
-
+    # 登录态校验由 upload 流程在持久化档案内完成，不再用临时浏览器预检（风控信号）
     app = DouYinNote(
         image_paths=[str(path) for path in request.image_files],
         title=request.title,
@@ -183,7 +178,12 @@ async def run(args):
         print("valid" if is_valid else "invalid")
         return 0 if is_valid else 1
 
-    publish_strategy = DOUYIN_PUBLISH_STRATEGY_SCHEDULED if args.schedule else DOUYIN_PUBLISH_STRATEGY_IMMEDIATE
+    if getattr(args, "draft", False):
+        publish_strategy = DOUYIN_PUBLISH_STRATEGY_DRAFT
+    elif args.schedule:
+        publish_strategy = DOUYIN_PUBLISH_STRATEGY_SCHEDULED
+    else:
+        publish_strategy = DOUYIN_PUBLISH_STRATEGY_IMMEDIATE
 
     if args.action == "upload-video":
         request = DouyinVideoUploadRequest(
@@ -205,7 +205,10 @@ async def run(args):
             collection_name=args.collection,
         )
         await upload_video(request)
-        print(f"Douyin video upload submitted: {request.video_file}")
+        if getattr(args, "draft", False):
+            print(f"Douyin video draft saved: {request.video_file}")
+        else:
+            print(f"Douyin video upload submitted: {request.video_file}")
         return 0
 
     if args.action == "upload-note":
@@ -231,7 +234,10 @@ async def run(args):
             bgm=args.bgm or "",
         )
         await upload_note(request)
-        print(f"Douyin note upload submitted: {len(request.image_files)} images")
+        if getattr(args, "draft", False):
+            print(f"Douyin note draft saved: {len(request.image_files)} images")
+        else:
+            print(f"Douyin note upload submitted: {len(request.image_files)} images")
         return 0
 
     raise RuntimeError(f"Unsupported Douyin action: {args.action}")

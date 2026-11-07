@@ -23,12 +23,13 @@ class DouyinDeclarationTests(unittest.TestCase):
         video = DouYinVideo(
             "标题", "/tmp/demo.mp4", [], 0, "/tmp/cookie.json",
             None, "", "", None, "",
-            "scheduled", False, False,
+            None, "scheduled", False, False,
         )
         self.assertEqual(video.publish_strategy, "scheduled")
         self.assertFalse(video.debug)
         self.assertFalse(video.headless)
         self.assertIsNone(video.declaration)
+        self.assertIsNone(video.collection_name)
 
     def test_apply_declaration_skips_when_unspecified(self):
         video = DouYinVideo("标题", "/tmp/demo.mp4", [], 0, "/tmp/cookie.json")
@@ -68,20 +69,27 @@ class DouyinDeclarationTests(unittest.TestCase):
         locator = MagicMock()
         locator.set_input_files = AsyncMock()
         locator.count = AsyncMock(return_value=1)
+        locator.wait_for = AsyncMock()
+        locator.first = locator  # 上传流程经 .first 链式取元素，返回自身即可
         page = MagicMock()
+        page.url = "https://creator.douyin.com/creator-micro/content/upload"
         page.goto = AsyncMock()
         page.wait_for_url = AsyncMock()
         page.wait_for_selector = AsyncMock()
+        page.wait_for_timeout = AsyncMock()
         page.locator.return_value = locator
+        # 登录态检测：无"扫码登录/手机号登录"文案 → 视为已登录
+        login_text = MagicMock()
+        login_text.count = AsyncMock(return_value=0)
+        page.get_by_text = MagicMock(return_value=login_text)
 
         context = MagicMock()
         context.new_page = AsyncMock(return_value=page)
         context.close = AsyncMock(side_effect=OSError("close failed"))
-        browser = MagicMock()
-        browser.new_context = AsyncMock(return_value=context)
-        browser.close = AsyncMock()
+        context.add_cookies = AsyncMock()
         playwright = MagicMock()
-        playwright.chromium.launch = AsyncMock(return_value=browser)
+        # 上传流程使用持久化 profile（launch_persistent_context），无独立 browser 对象
+        playwright.chromium.launch_persistent_context = AsyncMock(return_value=context)
 
         with (
             patch.object(douyin_main, "set_init_script", AsyncMock(return_value=context)),
@@ -91,7 +99,6 @@ class DouyinDeclarationTests(unittest.TestCase):
             asyncio.run(video.upload(playwright))
 
         context.close.assert_awaited_once()
-        browser.close.assert_awaited_once()
 
 
 if __name__ == "__main__":
