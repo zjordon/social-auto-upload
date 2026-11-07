@@ -1,5 +1,6 @@
 """douyin 的命令参数与执行逻辑。"""
 from __future__ import annotations
+import os
 import sys
 from dataclasses import dataclass
 from datetime import datetime
@@ -55,6 +56,12 @@ def register(platform_parsers):
         help="Exact Douyin self-declaration option text; omitted means do not set one",
     )
     upload_video_parser.add_argument("--collection", default=None, help="Optional collection name to add the work into (must already exist)")
+    upload_video_parser.add_argument(
+        "--cdp-url",
+        default=None,
+        help="Attach to a long-running browser via CDP (e.g. http://127.0.0.1:9223); "
+             "falls back to env SAU_DOUYIN_CDP_URL. Recommended: your regular publishing browser",
+    )
     add_runtime_flags(upload_video_parser)
 
     upload_note_parser = douyin_actions.add_parser("upload-note", help="Upload one note to Douyin")
@@ -68,6 +75,11 @@ def register(platform_parsers):
     note_publish_group = upload_note_parser.add_mutually_exclusive_group()
     note_publish_group.add_argument("--schedule", type=schedule_value, help=f"Schedule time in {schedule_help}")
     note_publish_group.add_argument("--draft", action="store_true", help="Save as draft instead of publishing")
+    upload_note_parser.add_argument(
+        "--cdp-url",
+        default=None,
+        help="Attach to a long-running browser via CDP; falls back to env SAU_DOUYIN_CDP_URL",
+    )
     add_runtime_flags(upload_note_parser)
 
 
@@ -89,6 +101,7 @@ class DouyinVideoUploadRequest:
     headless: bool = True
     declaration: str | None = None
     collection_name: str | None = None
+    cdp_url: str | None = None
 
 
 @dataclass(slots=True)
@@ -103,6 +116,7 @@ class DouyinNoteUploadRequest:
     debug: bool = True
     headless: bool = True
     bgm: str = ""
+    cdp_url: str | None = None
 
 
 async def login_douyin_account(account_name: str, headless: bool = True) -> dict:
@@ -140,6 +154,7 @@ async def upload_video(request: DouyinVideoUploadRequest) -> Path:
         debug=request.debug,
         headless=request.headless,
         collection_name=request.collection_name,
+        cdp_url=request.cdp_url,
     )
     await app.douyin_upload_video()
     return account_file
@@ -159,6 +174,7 @@ async def upload_note(request: DouyinNoteUploadRequest) -> Path:
         debug=request.debug,
         headless=request.headless,
         bgm=request.bgm,
+        cdp_url=request.cdp_url,
     )
     await app.douyin_upload_note()
     return account_file
@@ -185,6 +201,8 @@ async def run(args):
     else:
         publish_strategy = DOUYIN_PUBLISH_STRATEGY_IMMEDIATE
 
+    cdp_url = getattr(args, "cdp_url", None) or os.environ.get("SAU_DOUYIN_CDP_URL")
+
     if args.action == "upload-video":
         request = DouyinVideoUploadRequest(
             account_name=args.account,
@@ -203,6 +221,7 @@ async def run(args):
             debug=args.debug,
             headless=args.headless,
             collection_name=args.collection,
+            cdp_url=cdp_url,
         )
         await upload_video(request)
         if getattr(args, "draft", False):
@@ -232,6 +251,7 @@ async def run(args):
             debug=args.debug,
             headless=args.headless,
             bgm=args.bgm or "",
+            cdp_url=cdp_url,
         )
         await upload_note(request)
         if getattr(args, "draft", False):

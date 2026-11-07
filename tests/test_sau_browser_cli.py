@@ -120,6 +120,17 @@ class BrowserCliParserTests(unittest.TestCase):
             ])
         self.assertTrue(args.draft)
 
+    def test_douyin_upload_video_accepts_cdp_url(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            video_path = Path(tmp_dir) / "demo.mp4"
+            video_path.write_bytes(b"video")
+            args = sau_cli.build_parser().parse_args([
+                "douyin", "upload-video", "--account", "creator",
+                "--file", str(video_path), "--title", "标题",
+                "--cdp-url", "http://127.0.0.1:9223",
+            ])
+        self.assertEqual(args.cdp_url, "http://127.0.0.1:9223")
+
     def test_douyin_request_legacy_positional_runtime_flags_keep_their_meaning(self):
         request = sau_commands.douyin.DouyinVideoUploadRequest(
             "creator", Path("demo.mp4"), "标题", "简介", [], 0,

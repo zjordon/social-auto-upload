@@ -445,6 +445,7 @@ class DouYinBaseUploader(BaseVideoUploader):
         publish_strategy: str = DOUYIN_PUBLISH_STRATEGY_IMMEDIATE,
         debug: bool = DEBUG_MODE,
         headless: bool = LOCAL_CHROME_HEADLESS,
+        cdp_url: str | None = None,
     ):
         self.publish_date = publish_date
         self.account_file = account_file
@@ -453,6 +454,26 @@ class DouYinBaseUploader(BaseVideoUploader):
         self.date_format = "%Y年%m月%d日 %H:%M"
         self.local_executable_path = LOCAL_CHROME_PATH
         self.headless = headless
+        self.cdp_url = cdp_url
+
+    async def _acquire_context(self, playwright):
+        """按模式获取浏览器上下文：CDP 接管常驻浏览器，或启动自有持久化档案。
+
+        返回 (browser, context, owns_browser)。CDP 模式绝不关闭用户的常驻浏览器，
+        调用方只负责关闭自己新开的标签页；也不注入 stealth/种 cookie——常驻
+        浏览器本身的信任基线就是我们要复用的东西。
+        """
+        if self.cdp_url:
+            browser = await playwright.chromium.connect_over_cdp(self.cdp_url)
+            context = browser.contexts[0] if browser.contexts else await browser.new_context()
+            douyin_logger.info(_msg("🔗", f"已接管常驻浏览器: {self.cdp_url}"))
+            return browser, context, False
+        browser = None
+        context = await _launch_persistent_browser_context(
+            playwright, self.headless, self.account_file, permissions=["geolocation"]
+        )
+        context = await set_init_script(context)
+        return browser, context, True
 
     async def validate_base_args(self):
         if not os.path.exists(self.account_file):
@@ -754,6 +775,7 @@ class DouYinVideo(DouYinBaseUploader):
         debug: bool = DEBUG_MODE,
         headless: bool = LOCAL_CHROME_HEADLESS,
         declaration: str | None = None,
+        cdp_url: str | None = None,
     ):
         super().__init__(
             publish_date=publish_date,
@@ -761,6 +783,7 @@ class DouYinVideo(DouYinBaseUploader):
             publish_strategy=publish_strategy,
             debug=debug,
             headless=headless,
+            cdp_url=cdp_url,
         )
         self.title = title
         self.file_path = file_path
@@ -1100,14 +1123,12 @@ class DouYinVideo(DouYinBaseUploader):
         await self.validate_upload_args()
         douyin_logger.info(_msg("🥳", "上传前检查通过"))
 
-        browser = None
-        context = await _launch_persistent_browser_context(
-            playwright, self.headless, self.account_file, permissions=["geolocation"]
-        )
-        context = await set_init_script(context)
+        browser, context, owns_browser = await self._acquire_context(playwright)
+        our_page = None
 
         try:
             page = await context.new_page()
+            our_page = page
             _attach_network_diagnostics(page)
             if not await _check_login_in_profile(page):
                 raise RuntimeError(
@@ -1277,12 +1298,19 @@ class DouYinVideo(DouYinBaseUploader):
                         await page.screenshot(full_page=True)
                     await asyncio.sleep(0.5)
 
-            await context.storage_state(path=self.account_file)
-            douyin_logger.success(_msg("🥳", "cookie 更新完毕"))
+            try:
+                await context.storage_state(path=self.account_file)
+                douyin_logger.success(_msg("🥳", "cookie 更新完毕"))
+            except Exception:
+                pass  # cookie 导出失败不影响发布结果
             await asyncio.sleep(2)
         finally:
-            # 尽力清理浏览器资源；清理失败不覆盖原始异常（对齐 DouYinNote.upload 的清理语义）
-            closers = [context.close] + ([browser.close] if browser is not None else [])
+            # 尽力清理浏览器资源；清理失败不覆盖原始异常。
+            # CDP 接管模式只关闭自己新开的标签页，绝不关用户的常驻浏览器。
+            if owns_browser:
+                closers = [context.close] + ([browser.close] if browser is not None else [])
+            else:
+                closers = [our_page.close] if our_page is not None else []
             for close in closers:
                 try:
                     await close()
@@ -1310,6 +1338,7 @@ class DouYinNote(DouYinBaseUploader):
         debug: bool = DEBUG_MODE,
         headless: bool = LOCAL_CHROME_HEADLESS,
         bgm: str = "",
+        cdp_url: str | None = None,
     ):
         super().__init__(
             publish_date=publish_date,
@@ -1317,6 +1346,7 @@ class DouYinNote(DouYinBaseUploader):
             publish_strategy=publish_strategy,
             debug=debug,
             headless=headless,
+            cdp_url=cdp_url,
         )
         self.image_paths = image_paths
         self.note = note or ""
@@ -1418,15 +1448,12 @@ class DouYinNote(DouYinBaseUploader):
         await self.validate_upload_args()
         douyin_logger.info(_msg("🥳", "图文上传前检查通过"))
 
-        browser = None
-        context = await _launch_persistent_browser_context(
-            playwright, self.headless, self.account_file, permissions=["geolocation"]
-        )
-        context = await set_init_script(context)
-
+        browser, context, owns_browser = await self._acquire_context(playwright)
+        our_page = None
         upload_success = False
         try:
             page = await context.new_page()
+            our_page = page
             _attach_network_diagnostics(page)
             if not await _check_login_in_profile(page):
                 raise RuntimeError(
@@ -1441,12 +1468,22 @@ class DouYinNote(DouYinBaseUploader):
             upload_success = True
         finally:
             if upload_success:
-                await context.storage_state(path=self.account_file)
-                douyin_logger.success(_msg("🥳", "cookie 更新完毕"))
+                try:
+                    await context.storage_state(path=self.account_file)
+                    douyin_logger.success(_msg("🥳", "cookie 更新完毕"))
+                except Exception:
+                    pass
                 await asyncio.sleep(2)
-            await context.close()
-            if browser is not None:
-                await browser.close()
+            if owns_browser:
+                await context.close()
+                if browser is not None:
+                    await browser.close()
+            elif our_page is not None:
+                # CDP 接管模式只关自己开的标签页，不动用户的常驻浏览器
+                try:
+                    await our_page.close()
+                except Exception:
+                    pass
 
     async def douyin_upload_note(self):
         async with async_playwright() as playwright:
