@@ -1034,25 +1034,27 @@ class DouYinVideo(DouYinBaseUploader):
         if await cover_upload.count() == 0:
             cover_upload = cover_locator.locator("input.semi-upload-hidden-input").last
 
-        if self.thumbnail_portrait_path:
-            # 弹窗默认就在“设置竖封面”页；防御性点一下 tab（已激活则忽略）
+        # 取证（2026-11-07 晚，草稿零成本探针实测）：
+        # - 弹窗默认开在「设置横封面」tab（右侧主按钮是「设置竖封面」=下一步引导），
+        #   旧注释「默认在竖页」是错的，靠防御性点 tab 才没出事
+        # - 横/竖 tab 共用同一组 semi-upload input，切换后无需重定位
+        # - 先竖后横依次上传，一次「完成」可让两个封面同时生效
+        # 旧代码 if/elif 互斥：横竖两图都传时横版分支永远被跳过——
+        # 这就是「手册命令发抖音，其它字段都对、唯独横封面没传上」的根因。
+        for tab_text, image_path, label in (
+            ("设置竖封面", self.thumbnail_portrait_path, "竖版"),
+            ("设置横封面", self.thumbnail_landscape_path, "横版"),
+        ):
+            if not image_path:
+                continue
             try:
-                await cover_locator.get_by_text("设置竖封面", exact=True).first.click(timeout=3000)
+                await cover_locator.get_by_text(tab_text, exact=True).first.click(timeout=3000)
                 await page.wait_for_timeout(800)
             except Exception:
                 pass
-            await cover_upload.set_input_files(self.thumbnail_portrait_path)
+            await cover_upload.set_input_files(image_path)
             await page.wait_for_timeout(3000)
-            douyin_logger.info(_msg("🖼️", "竖版封面已上传到预览"))
-        elif self.thumbnail_landscape_path:
-            try:
-                await cover_locator.get_by_text("设置横封面", exact=True).first.click(timeout=3000)
-                await page.wait_for_timeout(800)
-            except Exception:
-                pass
-            await cover_upload.set_input_files(self.thumbnail_landscape_path)
-            await page.wait_for_timeout(3000)
-            douyin_logger.info(_msg("🖼️", "横版封面已上传到预览"))
+            douyin_logger.info(_msg("🖼️", f"{label}封面已上传到预览"))
 
         # ── 等"完成"按钮解禁：封面图处理完成前，"完成"是 semi-button-disabled，点了无效 ──
         def _finish_btn():
