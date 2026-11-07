@@ -13,6 +13,7 @@ import requests
 
 
 GITHUB_RELEASE_API = "https://api.github.com/repos/biliup/biliup/releases/latest"
+GITHUB_RELEASES_LIST_API = "https://api.github.com/repos/biliup/biliup/releases"
 
 
 def get_biliup_runtime_root() -> Path:
@@ -75,22 +76,44 @@ def _select_release_asset(assets: list[dict]) -> dict:
 
 
 def fetch_latest_release() -> dict:
-    response = requests.get(
-        GITHUB_RELEASE_API,
-        headers={
-            "Accept": "application/vnd.github+json",
-            "User-Agent": "social-auto-upload",
-        },
-        timeout=30,
-    )
+    """取最新可用 release。
+
+    上游从 v1.3.5 起只发布 Windows 安装器（无便携 zip），latest 常常没有
+    可匹配资产；此时向下遍历近期 release 找最新的便携版，避免"承诺自动
+    下载但实际全断"（实测 2026-11：v1.3.4 起便携资产仍在）。
+    """
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "social-auto-upload",
+    }
+    response = requests.get(GITHUB_RELEASE_API, headers=headers, timeout=30)
     response.raise_for_status()
     payload = response.json()
-    selected_asset = _select_release_asset(payload.get("assets", []))
-    return {
-        "tag_name": payload.get("tag_name", ""),
-        "asset_name": selected_asset["asset_name"],
-        "asset_url": selected_asset["asset_url"],
-    }
+    try:
+        selected_asset = _select_release_asset(payload.get("assets", []))
+        return {
+            "tag_name": payload.get("tag_name", ""),
+            "asset_name": selected_asset["asset_name"],
+            "asset_url": selected_asset["asset_url"],
+        }
+    except RuntimeError:
+        biliup_releases = requests.get(
+            GITHUB_RELEASES_LIST_API, headers=headers, params={"per_page": 10}, timeout=30
+        )
+        biliup_releases.raise_for_status()
+        for release in biliup_releases.json():
+            try:
+                selected_asset = _select_release_asset(release.get("assets", []))
+            except RuntimeError:
+                continue
+            return {
+                "tag_name": release.get("tag_name", ""),
+                "asset_name": selected_asset["asset_name"],
+                "asset_url": selected_asset["asset_url"],
+            }
+        raise RuntimeError(
+            "No biliup release with a portable asset found in the latest 10 releases"
+        )
 
 
 def read_local_biliup_version() -> str | None:
