@@ -13,7 +13,9 @@ chrome.exe --remote-debugging-port=9223 <你的日常 profile>
 
 - `--account creator` 里的 `creator` 是自定义账号名，不是固定值；CDP 模式下登录态取自常驻浏览器，不依赖本地 cookie 文件
 - 可设环境变量省掉 `--cdp-url`：`$env:SAU_DOUYIN_CDP_URL="http://127.0.0.1:9223"`、`$env:SAU_BILIBILI_CDP_URL="http://127.0.0.1:9223"`
-- `sau` 不可用时直接跑仓库里的 `python sau_cli.py <同款参数>`
+- `sau` 命令的安装（本机已装好）：在仓库目录执行一次 `uv tool install --editable .`，
+  之后任意终端可用。报「无法将 sau 项识别为…」说明没装或换了机器，重跑这条即可；
+  应急替代：`<仓库>\.venv\Scripts\sau.exe <同款参数>` 或激活 venv（`.venv\Scripts\Activate.ps1`）
 
 ## 1. 抖音：发视频草稿
 
