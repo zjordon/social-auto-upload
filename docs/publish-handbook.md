@@ -76,6 +76,7 @@ sau bilibili upload-video --account creator --file "D:\Videos\test\final\2026-04
 
 | 现象 | 判断与处理 |
 |---|---|
+| 报 `Error: Frame was detached` / `Connection closed while reading from the driver` | 常驻浏览器会话里残留的 target 状态（如挂机过夜的标签、孤儿 OOPIF iframe）毒死 patchright 驱动的帧树捕获，重试无效。**重启 9223 浏览器即恢复**（2026-11-07 实证）。切勿对 iframe 类 target 调 CDP `/json/close`——实测会带崩整个浏览器 |
 | 抖音停在「文件解析中 0%」不动 | 账号层频率限流（当日上传次数过多）。**当天别再测**，约数小时~一天自然衰减；先看浏览器页面实际状态再下结论 |
 | B 站封面 30 秒后放弃继续 | 已修复：确认按钮是右下角 `div.button.submit`「完成」（2026-11-07 取证）。若再出现，看日志「可见弹窗内容」dump |
 | 命令报登录态失效 | 常驻浏览器里抖音/B 站掉登录了，人工重新登录后重跑 |
