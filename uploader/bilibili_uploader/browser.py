@@ -26,6 +26,7 @@ from patchright.async_api import async_playwright
 
 from conf import BASE_DIR, DEBUG_MODE, LOCAL_CHROME_HEADLESS, LOCAL_CHROME_PATH
 from uploader.base_video import BaseVideoUploader
+from utils.cdp_files import feed_file_input
 from utils.log import bilibili_logger as bili_logger
 
 BILIBILI_PUBLISH_STRATEGY_IMMEDIATE = "immediate"
@@ -129,9 +130,11 @@ class BilibiliBrowserUploader(BaseVideoUploader):
     # ── 表单操作（选择器均有取证依据） ──
 
     async def _feed_video(self, page) -> None:
-        file_input = page.locator("input[accept*='.mp4']").first
+        selector = "input[accept*='.mp4']"
+        file_input = page.locator(selector).first
         await file_input.wait_for(state="attached", timeout=60000)
-        await file_input.set_input_files(self.video_file)
+        if await feed_file_input(page, selector, self.video_file):
+            bili_logger.info(_msg("📦", "视频超 50MB，已走 CDP 本地路径喂入（绕过 Playwright 转发上限）"))
         bili_logger.info(_msg("🏃", "视频已喂入，等待上传与表单渲染"))
 
     async def _wait_upload_complete(self, page) -> None:

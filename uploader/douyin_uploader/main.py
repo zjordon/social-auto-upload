@@ -15,6 +15,7 @@ from patchright.async_api import async_playwright
 from conf import BASE_DIR, DEBUG_MODE, LOCAL_CHROME_HEADLESS, LOCAL_CHROME_PATH
 from uploader.base_video import BaseVideoUploader
 from utils.base_social_media import set_init_script
+from utils.cdp_files import feed_file_input
 from utils.login_qrcode import build_login_qrcode_path
 from utils.login_qrcode import decode_qrcode_from_path
 from utils.login_qrcode import print_terminal_qrcode
@@ -940,7 +941,8 @@ class DouYinVideo(DouYinBaseUploader):
 
     async def handle_upload_error(self, page):
         douyin_logger.warning(_msg("😵", "视频上传摔了一跤，小人马上重新上传"))
-        await page.locator('div.progress-div [class^="upload-btn-input"]').set_input_files(self.file_path)
+        if await feed_file_input(page, 'div.progress-div [class^="upload-btn-input"]', self.file_path):
+            douyin_logger.info(_msg("📦", "重传视频超 50MB，已走 CDP 本地路径喂入"))
 
     async def handle_auto_video_cover(self, page):
         if await page.get_by_text("请设置封面后再发布").first.is_visible():
@@ -1147,15 +1149,19 @@ class DouYinVideo(DouYinBaseUploader):
 
             # 确认已经在上传页（非登录页），再找上传 input
             # 用更精确的选择器避免匹配到登录表单的 input
-            upload_input = page.locator("input.upload-btn-input, div[class^='container'] input[accept]").first
+            feed_selector = "input.upload-btn-input, div[class^='container'] input[accept]"
+            upload_input = page.locator(feed_selector).first
             if not await upload_input.count():
                 # 兜底：排除登录页的 input
-                upload_input = page.locator("div[class^='container'] input[type='file'], div[class^='container'] input.upload-input").first
+                feed_selector = "div[class^='container'] input[type='file'], div[class^='container'] input.upload-input"
+                upload_input = page.locator(feed_selector).first
             if not await upload_input.count():
                 # 最终兜底
-                upload_input = page.locator("div[class^='container'] input").first
+                feed_selector = "div[class^='container'] input"
+                upload_input = page.locator(feed_selector).first
             await upload_input.wait_for(state="attached", timeout=60000)
-            await upload_input.set_input_files(self.file_path)
+            if await feed_file_input(page, feed_selector, self.file_path):
+                douyin_logger.info(_msg("📦", "视频超 50MB，已走 CDP 本地路径喂入（绕过 Playwright 转发上限）"))
 
             while True:
                 try:

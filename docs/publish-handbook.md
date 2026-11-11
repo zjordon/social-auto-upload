@@ -76,6 +76,7 @@ sau bilibili upload-video --account creator --file "D:\Videos\test\final\2026-04
 
 | 现象 | 判断与处理 |
 |---|---|
+| 视频超 50MB 报 `Cannot transfer files larger than 50Mb` | 已修复（2026-11-11）：CDP 接管模式下 Playwright 会经驱动转发文件内容、>50MB 拒绝；现在 >50MB 自动改走 CDP 本地路径喂入（浏览器本机读盘，无上限），命令不变，日志会出现「已走 CDP 本地路径喂入」 |
 | 报 `Error: Frame was detached` / `Connection closed while reading from the driver` | 常驻浏览器会话里残留的 target 状态（如挂机过夜的标签、孤儿 OOPIF iframe）毒死 patchright 驱动的帧树捕获，重试无效。**重启 9223 浏览器即恢复**（2026-11-07 实证）。切勿对 iframe 类 target 调 CDP `/json/close`——实测会带崩整个浏览器 |
 | 抖音停在「文件解析中 0%」不动 | 账号层频率限流（当日上传次数过多）。**当天别再测**，约数小时~一天自然衰减；先看浏览器页面实际状态再下结论 |
 | B 站封面 30 秒后放弃继续 | 已修复：确认按钮是右下角 `div.button.submit`「完成」（2026-11-07 取证）。若再出现，看日志「可见弹窗内容」dump |
