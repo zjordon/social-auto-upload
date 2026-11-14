@@ -93,6 +93,22 @@ class FeedFileInputTests(unittest.TestCase):
         session.detach.assert_awaited_once()
 
 
+    def test_forced_cdp_channel_used_even_for_small_files(self):
+        """CDP 接管模式（force_cdp_channel=True）：小文件也走 CDP——
+        实测 Playwright 负载通道传 37.9MB 要 ~30s（贴着 30s 默认超时）。"""
+        session = _mock_cdp_session()
+        page, loc = _mock_page(session)
+        with tempfile.NamedTemporaryFile(suffix=".mp4") as f:
+            f.write(b"x")
+            f.flush()
+            used_cdp = asyncio.run(
+                feed_file_input(page, "input[type=file]", f.name, force_cdp_channel=True)
+            )
+        self.assertTrue(used_cdp)
+        loc.set_input_files.assert_not_awaited()
+        self.assertEqual(session.send.await_args_list[-1].args[0], "DOM.setFileInputFiles")
+
+
 class SetInputFilesViaCdpTests(unittest.TestCase):
     def test_missing_selector_raises_actionable_error(self):
         session = _mock_cdp_session()

@@ -796,6 +796,9 @@ class DouYinVideo(DouYinBaseUploader):
         self.desc = desc or ""
         self.collection_name = collection_name
         self.declaration = declaration.strip() if declaration and declaration.strip() else None
+        # upload() 里按 _acquire_context 结果更新；CDP 接管(非自有浏览器)时喂文件
+        # 强制走 CDP 本地路径通道（Playwright 负载通道传大文件会超时/拒收）
+        self._owns_browser = True
 
     async def apply_self_declaration(self, page: Page) -> None:
         if not self.declaration:
@@ -941,8 +944,11 @@ class DouYinVideo(DouYinBaseUploader):
 
     async def handle_upload_error(self, page):
         douyin_logger.warning(_msg("😵", "视频上传摔了一跤，小人马上重新上传"))
-        if await feed_file_input(page, 'div.progress-div [class^="upload-btn-input"]', self.file_path):
-            douyin_logger.info(_msg("📦", "重传视频超 50MB，已走 CDP 本地路径喂入"))
+        if await feed_file_input(
+            page, 'div.progress-div [class^="upload-btn-input"]', self.file_path,
+            force_cdp_channel=not getattr(self, "_owns_browser", True),
+        ):
+            douyin_logger.info(_msg("📦", "重传视频已走 CDP 本地路径喂入"))
 
     async def handle_auto_video_cover(self, page):
         if await page.get_by_text("请设置封面后再发布").first.is_visible():
@@ -1128,6 +1134,7 @@ class DouYinVideo(DouYinBaseUploader):
         douyin_logger.info(_msg("🥳", "上传前检查通过"))
 
         browser, context, owns_browser = await self._acquire_context(playwright)
+        self._owns_browser = owns_browser
         our_page = None
 
         try:
@@ -1160,8 +1167,11 @@ class DouYinVideo(DouYinBaseUploader):
                 feed_selector = "div[class^='container'] input"
                 upload_input = page.locator(feed_selector).first
             await upload_input.wait_for(state="attached", timeout=60000)
-            if await feed_file_input(page, feed_selector, self.file_path):
-                douyin_logger.info(_msg("📦", "视频超 50MB，已走 CDP 本地路径喂入（绕过 Playwright 转发上限）"))
+            if await feed_file_input(
+                page, feed_selector, self.file_path,
+                force_cdp_channel=not getattr(self, "_owns_browser", True),
+            ):
+                douyin_logger.info(_msg("📦", "视频已走 CDP 本地路径喂入（接管模式下 Playwright 负载通道慢且限 50MB）"))
 
             while True:
                 try:

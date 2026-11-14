@@ -133,8 +133,8 @@ class BilibiliBrowserUploader(BaseVideoUploader):
         selector = "input[accept*='.mp4']"
         file_input = page.locator(selector).first
         await file_input.wait_for(state="attached", timeout=60000)
-        if await feed_file_input(page, selector, self.video_file):
-            bili_logger.info(_msg("📦", "视频超 50MB，已走 CDP 本地路径喂入（绕过 Playwright 转发上限）"))
+        if await feed_file_input(page, selector, self.video_file, force_cdp_channel=bool(self.cdp_url)):
+            bili_logger.info(_msg("📦", "视频已走 CDP 本地路径喂入（接管模式下 Playwright 负载通道慢且限 50MB）"))
         bili_logger.info(_msg("🏃", "视频已喂入，等待上传与表单渲染"))
 
     async def _wait_upload_complete(self, page) -> None:
